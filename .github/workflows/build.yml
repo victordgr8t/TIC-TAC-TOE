@@ -16,56 +16,26 @@ jobs:
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
 
-      - name: Build and analyze with SonarQube
-        uses: sonarsource/sonarqube-scan-action@master
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-      - name: npm install dependecy
-        run: npm install
+      - name: Deploy the container
+        run: |
+          docker stop ticgame
+          docker rm ticgame
+        
 
-      - name: Trivy file scan
-        run: trivy fs . > trivyfs.txt  
+      - name: Update kubeconfig
+        run: aws eks --region eu-west-1 update-kubeconfig --name EKS_CLOUD
 
-      - name: Docker Build and Push
-        run: | 
-               docker build  -t tic-tac-toe .
-               docker tag tic-tac-toe vicdg8t/tic-tac-toe:latest
-               docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-               docker push vicdg8t/tic-tac-toe:latest
-        env:
-                DOCKER_CLI_ACI: 1   
-
-      - name: Image scan
-        run: trivy image vicdg8t/tic-tac-toe:latest > trivyimage.txt         
-                
-  deploy:
-    needs: build-analyze-scan
-    runs-on: self-hosted # Use your self-hosted runner label here
-    steps:
-       - name: Pull the Docker image
-         run: docker pull sevenajay/tic-tac-toe:latest
-
-       - name: Trivy image scan
-         run: trivy image sevenajay/tic-tac-toe:latest # Add Trivy scan command here
-
-       - name: Run the container
-         run: docker run -d --name ticgame -p 3000:3000 sevenajay/tic-tac-toe:latest
-
-       - name: Update kubeconfig
-         run: aws eks --region eu-west-1 update-kubeconfig --name EKS_CLOUD
-
-       - name: Deploy to kubernetes
-         run: kubectl apply -f deployment-service.yml
+      - name: Deploy to kubernetes
+        run: kubectl delete -f deployment-service.yml
   
-       - name: Send a Slack Notification
-         if: always()
-         uses: act10ns/slack@v1
-         with:
+      - name: Send a Slack Notification
+        if: always()
+        uses: act10ns/slack@v1
+        with:
           status: ${{ job.status }}
           steps: ${{ toJson(steps) }}
           channel: '#githubactions-eks'
-         env:
+        env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}   
 
    
